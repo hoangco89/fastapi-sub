@@ -1,2 +1,7 @@
 fastapi
 uvicorn
+youtube-transcript-api
+yt-dlp
+
+
+
