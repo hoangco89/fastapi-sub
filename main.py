@@ -1,60 +1,88 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-import subprocess
-import json
-import tempfile
-import os
+import yt_dlp
+import requests
+import re
 
-app = FastAPI(
-    title="YouTube Subtitle API (yt-dlp version)",
-    description="Lấy phụ đề YouTube bằng yt-dlp, không bị chặn 429",
-    version="1.0.0"
-)
+app = FastAPI()
 
-# Bật CORS
+# Cho phép mọi trình duyệt gọi API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-@app.get("/")
-def home():
-    return {"message": "API chạy bằng yt-dlp, ổn định và không bị chặn!"}
+def sanitize_filename(name):
+    return re.sub(r'[\\/*?:"<>|]', "", name)
+
+def extract_simple_json(sub_json):
+    """Chuyển JSON phụ đề YouTube sang dạng [{start, end, text}]"""
+    items = []
+    events = sub_json.get("events", [])
+
+    for ev in events:
+        if "segs" not in ev:
+            continue
+
+        start = ev.get("tStartMs", 0) / 1000
+        end = start + ev.get("dDurationMs", 0) / 1000
+        text = "".join(seg.get("utf8", "") for seg in ev["segs"]).strip()
+
+        if text:
+            items.append({
+                "start": round(start, 3),
+                "end": round(end, 3),
+                "text": text,
+                "textdich": ""
+
+            })
+
+    return items
+
 
 @app.get("/subtitle")
-def get_sub(url: str):
-    try:
-        # Tạo file tạm để yt-dlp lưu phụ đề JSON
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = os.path.join(tmpdir, "subtitles")
+def get_subtitle(url: str = Query(...), lang: str = "en"):
+    """
+    API: /subtitle?url=YOUTUBE_URL&lang=en
+    Trả về phụ đề dạng [{start, end, text, textdich}]
+    """
 
-            cmd = [
-                "yt-dlp",
-                "--write-auto-subs",          # lấy phụ đề auto
-                "--sub-format", "json",       # định dạng JSON
-                "--skip-download",            # không tải video
-                "-o", output_path,            # đường dẫn output
-                url
-            ]
+    # Lấy metadata video
+    meta_opts = {"quiet": True, "skip_download": True}
+    with yt_dlp.YoutubeDL(meta_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        title = sanitize_filename(info.get("title", "subtitle"))
 
-            result = subprocess.run(cmd, capture_output=True, text=True)
+    # Lấy phụ đề
+    ydl_opts = {
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitlesformat": "json",
+        "subtitleslangs": [lang],
+        "quiet": True,
+    }
 
-            # Kiểm tra lỗi yt-dlp
-            if result.returncode != 0:
-                raise HTTPException(status_code=500, detail=result.stderr)
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        data = ydl.extract_info(url, download=False)
 
-            # Tìm file phụ đề JSON
-            for file in os.listdir(tmpdir):
-                if file.endswith(".json"):
-                    with open(os.path.join(tmpdir, file), "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        return data
+    subs = data.get("subtitles") or data.get("automatic_captions")
 
-            raise HTTPException(status_code=404, detail="Không tìm thấy phụ đề JSON")
+    if not subs or lang not in subs:
+        return {"error": "Không tìm thấy phụ đề cho video này."}
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-        
+    # URL phụ đề JSON
+    sub_url = subs[lang][0]["url"]
+    raw_json = requests.get(sub_url).json()
+
+    # Chuyển sang dạng đơn giản
+    simple_json = extract_simple_json(raw_json)
+
+    return {
+        "title": title,
+        "lang": lang,
+        "count": len(simple_json),
+        "subtitles": simple_json
+    }
