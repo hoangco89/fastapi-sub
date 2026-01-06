@@ -63,6 +63,11 @@ def get_subtitle(url: str = Query(...), lang: str = "en"):
         "subtitlesformat": "json",
         "subtitleslangs": [lang],
         "quiet": True,
+        'no_warnings': True,
+        'ratelimit': 500000,  # giới hạn tốc độ tải: 500 KB/s
+        'sleep_interval_requests': 2,  # nghỉ 2 giây giữa các request
+        'forcejson': True
+
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
