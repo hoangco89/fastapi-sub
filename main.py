@@ -1,93 +1,92 @@
-from fastapi import FastAPI, Query
-from fastapi.middleware.cors import CORSMiddleware
-import yt_dlp
+from fastapi import FastAPI, HTTPException
+from yt_dlp import YoutubeDL
 import requests
+import xml.etree.ElementTree as ET
 import re
 
 app = FastAPI()
 
-# Cho phép mọi trình duyệt gọi API
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+def parse_time(t):
+    if t is None:
+        return None
+    t = t.strip()
 
-def sanitize_filename(name):
-    return re.sub(r'[\\/*?:"<>|]', "", name)
+    if re.match(r"^\d{2}:\d{2}:\d{2}(\.\d+)?$", t):
+        h, m, s = t.split(":")
+        return int(h)*3600 + int(m)*60 + float(s)
 
-def extract_simple_json(sub_json):
-    """Chuyển JSON phụ đề YouTube sang dạng [{start, end, text}]"""
-    items = []
-    events = sub_json.get("events", [])
+    if re.match(r"^\d{2}:\d{2}(\.\d+)?$", t):
+        m, s = t.split(":")
+        return int(m)*60 + float(s)
 
-    for ev in events:
-        if "segs" not in ev:
-            continue
+    if t.endswith("s"):
+        return float(t[:-1])
 
-        start = ev.get("tStartMs", 0) / 1000
-        end = start + ev.get("dDurationMs", 0) / 1000
-        text = "".join(seg.get("utf8", "") for seg in ev["segs"]).strip()
+    if t.endswith("ms"):
+        return float(t[:-2]) / 1000
 
-        if text:
-            items.append({
-                "start": round(start, 3),
+    try:
+        return float(t)
+    except:
+        return None
+
+
+def ttml_text_to_json(ttmlText):
+    root = ET.fromstring(ttmlText)
+
+    ns = {}
+    if root.tag.startswith("{"):
+        uri = root.tag.split("}")[0].strip("{")
+        ns["tt"] = uri
+
+    p_elems = root.findall(".//tt:p", ns) if ns else root.findall(".//p")
+
+    result = []
+    for p in p_elems:
+        begin = parse_time(p.get("begin"))
+        end = parse_time(p.get("end"))
+        dur = parse_time(p.get("dur"))
+
+        if begin is not None and end is None and dur is not None:
+            end = begin + dur
+
+        text = "".join(p.itertext()).strip()
+
+        if begin is not None and end is not None and text:
+            result.append({
+                "start": round(begin, 3),
                 "end": round(end, 3),
-                "text": text,
-                "textdich": ""
-
+                "text": text
             })
 
-    return items
+    return result
+
+
+@app.get("/")
+def home():
+    return {"message": "YouTube Subtitle API is running!"}
 
 
 @app.get("/subtitle")
-def get_subtitle(url: str = Query(...), lang: str = "en"):
-    """
-    API: /subtitle?url=YOUTUBE_URL&lang=en
-    Trả về phụ đề dạng [{start, end, text, textdich}]
-    """
+def get_subtitle(url: str, lang: str = "en"):
+    try:
+        ydl_opts = {"skip_download": True}
+        with YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
 
-    # Lấy metadata video
-    meta_opts = {"quiet": True, "skip_download": True}
-    with yt_dlp.YoutubeDL(meta_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-        title = sanitize_filename(info.get("title", "subtitle"))
+        subs = info.get("automatic_captions", {}).get(lang, [])
 
-    # Lấy phụ đề
-    ydl_opts = {
-        "skip_download": True,
-        "writesubtitles": True,
-        "writeautomaticsub": True,
-        "subtitlesformat": "json",
-        "subtitleslangs": [lang],
-        "quiet": True,
-        'no_warnings': True,
-        'ratelimit': 500000,  # giới hạn tốc độ tải: 500 KB/s
-        'sleep_interval_requests': 2,  # nghỉ 2 giây giữa các request
-        'forcejson': True
+        entry = next((s for s in subs if s.get("ext") == "ttml"), None)
 
-    }
+        if not entry:
+            raise HTTPException(404, "Không tìm thấy phụ đề TTML")
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        data = ydl.extract_info(url, download=False)
+        sub_url = entry["url"]
+        ttml_text = requests.get(sub_url).text
 
-    subs = data.get("subtitles") or data.get("automatic_captions")
+        data = ttml_text_to_json(ttml_text)
+        return data
 
-    if not subs or lang not in subs:
-        return {"error": "Không tìm thấy phụ đề cho video này."}
-
-    # URL phụ đề JSON
-    sub_url = subs[lang][0]["url"]
-    raw_json = requests.get(sub_url).json()
-
-    # Chuyển sang dạng đơn giản
-    simple_json = extract_simple_json(raw_json)
-
-    return {
-        "title": title,
-        "lang": lang,
-        "count": len(simple_json),
-        "subtitles": simple_json
-    }
+    except Exception as e:
+        raise HTTPException(500, f"Lỗi: {str(e)}")
+        
