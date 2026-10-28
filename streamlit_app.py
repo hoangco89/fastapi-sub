@@ -31,7 +31,7 @@ if not API_KEY:
     st.stop()
 
 GROQ = "https://api.groq.com/openai/v1"
-LANGS = {"Tiếng Việt": "vi", "English": "en", "French": "fr", "Denmark": "da", "Chinese": "zh"}
+LANGS = {"English": "en", "Vietnamese": "vi", "French": "fr", "Denmark": "da", "Chinese": "zh"}
 
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -59,6 +59,7 @@ def ask_groq(history):
         headers={"Authorization": f"Bearer {API_KEY}"},
         json={
             "model": MODEL,
+            "max_tokens": 500,
             "messages": [
                 {"role": "system", "content": "Bạn là trợ lý hữu ích. Trả lời ngắn gọn, rõ ràng, bằng ngôn ngữ của người hỏi."},
                 *history,
