@@ -87,7 +87,7 @@ COMPONENT_HTML = r"""<!DOCTYPE html>
   </div>
   <div id="frame">
     <div id="left">
-      <div id="hint">Nhấp <button class="emo" id="btnKb" type="button">⌨️</button> để gõ/dán câu hỏi, hoặc nhấp <button class="emo" id="btnMic" type="button">🎙️</button> để nói rồi nhấp nút gửi</div>
+      <div id="hint">Nhấp <button class="emo" id="btnKb" type="button">⌨️</button>, hoặc nhấp <button class="emo" id="btnMic" type="button">🎙️</button> để hỏi rồi gửi</div>
       <textarea id="txt" rows="1"></textarea>
     </div>
     <button id="send" type="button" disabled>𖤂</button>
