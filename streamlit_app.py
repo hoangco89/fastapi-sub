@@ -35,8 +35,8 @@ if not API_KEY:
 GROQ = "https://api.groq.com/openai/v1"
 # tên hiển thị: (mã cho giọng đọc gTTS, mã cho nhận diện giọng nói của trình duyệt)
 LANGS = {
-    "English": ("en", "en-US"),
     "Tiếng Việt": ("vi", "vi-VN"),
+    "English": ("en", "en-US"),
     "Français": ("fr", "fr-FR"),
     "Dansk": ("da", "da-DK"),
 }
@@ -87,7 +87,7 @@ COMPONENT_HTML = r"""<!DOCTYPE html>
   </div>
   <div id="frame">
     <div id="left">
-      <div id="hint">Nhấp <button class="emo" id="btnKb" type="button">⌨️</button>, hoặc nhấp <button class="emo" id="btnMic" type="button">🎙️</button> để hỏi rồi gửi</div>
+      <div id="hint">Bấm <button class="emo" id="btnKb" type="button">⌨️</button>, hoặc bấm <button class="emo" id="btnMic" type="button">🎤</button> để hỏi rồi gửi</div>
       <textarea id="txt" rows="1"></textarea>
     </div>
     <button id="send" type="button" disabled>𖤂</button>
@@ -209,7 +209,7 @@ COMPONENT_HTML = r"""<!DOCTYPE html>
       $("txt").placeholder = "Gõ hoặc dán câu hỏi...";
       $("txt").focus();
     } else {
-      $("chipEm").textContent = "🎙️";
+      $("chipEm").textContent = "🎤";
       startRec();
     }
     fit();
